@@ -230,6 +230,72 @@ def plot_nari_series(stats_dict, dates, out_filename=None):
     
     plt.show()
 
+def visualize_series(image_path, dates_list=None, cmap='YlOrRd', ncols=2):
+    """
+    Affiche toutes les bandes d'une image multibande (ex: Série Temporelle ARI).
+    Gère le NoData et l'affichage en grille.
+    """
+    # Chargement
+    if not os.path.exists(image_path):
+        print(f"Fichier introuvable : {image_path}")
+        return
+    data = rw.load_img_as_array(image_path)
+    
+    # Gestion des dimensions
+    if len(data.shape) == 2:
+        data = data[:, :, np.newaxis]
+    
+    rows, cols, nb_bands = data.shape
+    
+    # Nettoyage pour l'affichage (NoData -9999 -> NaN)
+    data_visu = data.astype('float32').copy()
+    data_visu[data_visu == -9999] = np.nan
+
+    # Calcul des bornes min/max GLOBALES (sur l'ensemble des dates)
+    # => vmin/vmax automatique basé sur les percentiles pour éviter qu'un pixel aberrant écrase tout
+    # => Garantit que la même couleur représente la même valeur partout.
+    global_vmin = np.nanpercentile(data_visu, 2)
+    global_vmax = np.nanpercentile(data_visu, 98)
+    
+    # Calcul de la grille
+    nrows = int(np.ceil(nb_bands / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 5 * nrows), constrained_layout=True)
+
+    # Aplatir le tableau d'axes pour itérer facilement (même s'il n'y a qu'une ligne)
+    if nb_bands > 1:
+        axes_flat = axes.flatten()
+    else:
+        axes_flat = [axes]
+
+    # Boucle d'affichage
+    for i in range(nb_bands):
+        ax = axes_flat[i]
+        
+        # Titre (Date ou Numéro de bande)
+        if dates_list is not None and len(dates_list) == nb_bands:
+            title = f"Date : {str(dates_list[i]).split(' ')[0]}"
+        else:
+            title = f"Bande {i+1}"
+            
+        # Affichage de l'image
+        im = ax.imshow(
+            data_visu[:, :, i], cmap=cmap, 
+            vmin=global_vmin, vmax=global_vmax, 
+            interpolation='nearest')
+        
+        ax.set_title(title, fontsize=10, fontweight='bold')
+        ax.axis('off')
+        
+        # Barre de couleur individuelle
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # Masquer les axes vides s'il y en a
+    for j in range(nb_bands, len(axes_flat)):
+        axes_flat[j].axis('off')
+
+    plt.suptitle(f"Visualisation de la série : {os.path.basename(image_path)}", fontsize=16)
+    plt.show()
+
 # ======================================================================
 # 4. PRÉPARATION DATASET + VISUALISATION MODÈLE & FEATURE IMPORTANCE
 # ======================================================================
