@@ -77,6 +77,39 @@ def rasterize_samples(image_ref_path, vector_path, field_name):
 # 2. ANALYSE DES ECHANTILLONS
 # ==============================
 
+def analyze_polygon_metrics(gdf, class_col='strate', labels_dict=None):
+    """
+    Calcule les statistiques par classe (Polygones, Pixels, Moyenne).
+    """
+    df = gdf.copy()
+    
+    # Calculs géométriques
+    df['area_m2'] = df.geometry.area
+    df['pixels_estimes'] = df['area_m2'] / 100
+    
+    # Agrégation
+    stats = df.groupby(class_col).agg(
+        Nb_Polygones=('geometry', 'count'),
+        Nb_Pixels=('pixels_estimes', 'sum')
+    )
+    
+    # Calcul Taille Moyenne
+    stats['Taille Moyenne (px)'] = stats['Nb_Pixels'] / stats['Nb_Polygones']
+    
+    # Mapping des noms (1 -> Sol Nu...)
+    if labels_dict:
+        stats.index = stats.index.map(labels_dict)
+    
+    # Calcul des % (sur les données propres)
+    total_poly = stats['Nb_Polygones'].sum()
+    total_pix = stats['Nb_Pixels'].sum()
+    
+    stats['% Polygones'] = (stats['Nb_Polygones'] / total_poly) * 100
+    stats['% Pixels'] = (stats['Nb_Pixels'] / total_pix) * 100
+    
+    cols_order = ['Nb_Polygones', '% Polygones', 'Nb_Pixels', '% Pixels', 'Taille Moyenne (px)']
+    return stats[cols_order]
+
 def save_class_distributions(serie_poly, serie_pix, colors_poly, colors_pix, path_poly, path_pix):
     """
     Génère et sauvegarde les deux graphiques individuels (Polygones et Pixels)
@@ -134,39 +167,6 @@ def show_class_distributions(serie_poly, serie_pix, colors_poly, colors_pix):
 
     plt.tight_layout()
     plt.show()
-
-def analyze_polygon_metrics(gdf, class_col='strate', labels_dict=None):
-    """
-    Calcule les statistiques par classe (Polygones, Pixels, Moyenne).
-    """
-    df = gdf.copy()
-    
-    # Calculs géométriques
-    df['area_m2'] = df.geometry.area
-    df['pixels_estimes'] = df['area_m2'] / 100
-    
-    # Agrégation
-    stats = df.groupby(class_col).agg(
-        Nb_Polygones=('geometry', 'count'),
-        Nb_Pixels=('pixels_estimes', 'sum')
-    )
-    
-    # Calcul Taille Moyenne
-    stats['Taille Moyenne (px)'] = stats['Nb_Pixels'] / stats['Nb_Polygones']
-    
-    # Mapping des noms (1 -> Sol Nu...)
-    if labels_dict:
-        stats.index = stats.index.map(labels_dict)
-    
-    # Calcul des % (sur les données propres)
-    total_poly = stats['Nb_Polygones'].sum()
-    total_pix = stats['Nb_Pixels'].sum()
-    
-    stats['% Polygones'] = (stats['Nb_Polygones'] / total_poly) * 100
-    stats['% Pixels'] = (stats['Nb_Pixels'] / total_pix) * 100
-    
-    cols_order = ['Nb_Polygones', '% Polygones', 'Nb_Pixels', '% Pixels', 'Taille Moyenne (px)']
-    return stats[cols_order]
 
 # ===============================
 # 3. ANALYSE TEMPORELLE (NARI)
