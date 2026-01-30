@@ -2,7 +2,7 @@
 """
 Librairie de fonctions pour le projet TELEA - Classification Supervisée
 @author: Maxime Ibres
-@organization: Master SIGMA
+@organization: Master 2 SIGMA
 """
 import os
 import numpy as np
@@ -20,7 +20,6 @@ from libsigma import read_and_write as rw
 def add_nodata_metadata(path_file, nodata_value=-9999):
     """
     Ouvre l'image avec GDAL pour forcer l'écriture du tag NoData dans les métadonnées.
-    C'est une bonne pratique pour que QGIS/ArcGIS reconnaisse le fond transparent.
     """
     ds = gdal.Open(path_file, gdal.GA_Update)
     if ds:
@@ -34,7 +33,7 @@ def rasterize_samples(image_ref_path, vector_path, field_name):
     Rastérise un shapefile sur la grille d'une image de référence.
     Retourne un array numpy où chaque pixel a la valeur du champ demandé.
     """
-    # 1. Ouvrir l'image de référence pour récupérer dimensions et géoréférencement
+    # Ouvrir l'image de référence pour récupérer dimensions et géoréférencement
     ds_ref = gdal.Open(image_ref_path)
     if ds_ref is None:
         raise FileNotFoundError(f"Impossible d'ouvrir {image_ref_path}")
@@ -44,19 +43,19 @@ def rasterize_samples(image_ref_path, vector_path, field_name):
     geo_transform = ds_ref.GetGeoTransform()
     projection = ds_ref.GetProjection()
     
-    # 2. Créer un raster temporaire en mémoire
+    # Créer un raster temporaire en mémoire
     driver = gdal.GetDriverByName('MEM')
     target_ds = driver.Create('', cols, rows, 1, gdal.GDT_Byte)
     target_ds.SetGeoTransform(geo_transform)
     target_ds.SetProjection(projection)
     
-    # 3. Ouvrir le vecteur
+    # Ouvrir le vecteur
     shp_ds = gdal.OpenEx(vector_path, gdal.OF_VECTOR)
     if shp_ds is None:
         raise FileNotFoundError(f"Impossible d'ouvrir {vector_path}")
     layer = shp_ds.GetLayer()
     
-    # 4. Rastériser les polygones sur le raster vide
+    # Rastériser les polygones sur le raster vide
     # Initialisation à 0
     band = target_ds.GetRasterBand(1)
     band.Fill(0)
@@ -64,7 +63,7 @@ def rasterize_samples(image_ref_path, vector_path, field_name):
     # Ecrire la valeur du champ 'strate'
     gdal.RasterizeLayer(target_ds, [1], layer, options=[f"ATTRIBUTE={field_name}"])
     
-    # 5. Récupérer le tableau numpy
+    # Récupérer le tableau numpy
     array = band.ReadAsArray()
     
     # Nettoyage
@@ -83,7 +82,7 @@ def save_class_distributions(serie_poly, serie_pix, colors_poly, colors_pix, pat
     Génère et sauvegarde les deux graphiques individuels (Polygones et Pixels)
     en respectant exactement le formatage d'origine.
     """
-    # A. Graphique Polygones (Sauvegarde)
+    # Graphique Polygones
     plt.figure(figsize=(8, 6))
     ax_p = serie_poly.plot(kind='bar', color=colors_poly)
     ax_p.bar_label(ax_p.containers[0], padding=3)
@@ -96,7 +95,7 @@ def save_class_distributions(serie_poly, serie_pix, colors_poly, colors_pix, pat
     plt.close()
     print(f"=> Graphique sauvegardé dans {path_poly}.")
 
-    # B. Graphique Pixels (Sauvegarde)
+    # Graphique Pixels
     plt.figure(figsize=(8, 6))
     ax_px = serie_pix.plot(kind='bar', color=colors_pix)
     ax_px.bar_label(ax_px.containers[0], fmt='{:,.0f}', padding=3)
@@ -135,6 +134,39 @@ def show_class_distributions(serie_poly, serie_pix, colors_poly, colors_pix):
 
     plt.tight_layout()
     plt.show()
+
+def analyze_polygon_metrics(gdf, class_col='strate', labels_dict=None):
+    """
+    Calcule les statistiques par classe (Polygones, Pixels, Moyenne).
+    """
+    df = gdf.copy()
+    
+    # Calculs géométriques
+    df['area_m2'] = df.geometry.area
+    df['pixels_estimes'] = df['area_m2'] / 100
+    
+    # Agrégation
+    stats = df.groupby(class_col).agg(
+        Nb_Polygones=('geometry', 'count'),
+        Nb_Pixels=('pixels_estimes', 'sum')
+    )
+    
+    # Calcul Taille Moyenne
+    stats['Taille Moyenne (px)'] = stats['Nb_Pixels'] / stats['Nb_Polygones']
+    
+    # Mapping des noms (1 -> Sol Nu...)
+    if labels_dict:
+        stats.index = stats.index.map(labels_dict)
+    
+    # Calcul des % (sur les données propres)
+    total_poly = stats['Nb_Polygones'].sum()
+    total_pix = stats['Nb_Pixels'].sum()
+    
+    stats['% Polygones'] = (stats['Nb_Polygones'] / total_poly) * 100
+    stats['% Pixels'] = (stats['Nb_Pixels'] / total_pix) * 100
+    
+    cols_order = ['Nb_Polygones', '% Polygones', 'Nb_Pixels', '% Pixels', 'Taille Moyenne (px)']
+    return stats[cols_order]
 
 # ===============================
 # 3. ANALYSE TEMPORELLE (NARI)
@@ -183,7 +215,6 @@ def extract_temporal_stats(ari_cube, mask_classes, classes_info):
         # S'il y a des pixels pour cette classe
         if np.sum(is_class) > 0:
             # Extraction des valeurs
-            # Si ari_cube est (H, W, D), values sera (N_pixels, D)
             values = ari_cube[is_class] 
             
             # Calcul des stats sur l'axe 0 (sur l'ensemble des pixels de la classe)
@@ -197,7 +228,8 @@ def extract_temporal_stats(ari_cube, mask_classes, classes_info):
 
 def plot_nari_series(stats_dict, dates, out_filename=None):
     """
-    Génère le graphique de la série temporelle moyenne d’ARI de chaque strate dans le même graphique.
+    Génère le graphique de la série temporelle moyenne d’ARI de chaque strate 
+    dans le même graphique.
     """
     plt.figure(figsize=(12, 6))
 
@@ -270,22 +302,18 @@ def visualize_series(image_path, dates_list=None, cmap='YlOrRd', ncols=2):
     # Boucle d'affichage
     for i in range(nb_bands):
         ax = axes_flat[i]
-        
         # Titre (Date ou Numéro de bande)
         if dates_list is not None and len(dates_list) == nb_bands:
             title = f"Date : {str(dates_list[i]).split(' ')[0]}"
         else:
             title = f"Bande {i+1}"
-            
         # Affichage de l'image
         im = ax.imshow(
             data_visu[:, :, i], cmap=cmap, 
             vmin=global_vmin, vmax=global_vmax, 
             interpolation='nearest')
-        
         ax.set_title(title, fontsize=10, fontweight='bold')
         ax.axis('off')
-        
         # Barre de couleur individuelle
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
@@ -310,7 +338,7 @@ def prepare_training_dataset(list_files, shp_path, field_name='strate'):
     features_list = []
     ref_shape = None # Pour vérifier les dimensions (Lignes, Colonnes)
 
-    # 1. Chargement et Empilement
+    # Chargement et Empilement
     print(f"Chargement de {len(list_files)} fichiers...")
     
     for f in list_files:
@@ -334,11 +362,11 @@ def prepare_training_dataset(list_files, shp_path, field_name='strate'):
     # Concaténation finale : colle tout sur l'axe des "variables" (axe 2)
     X_full = np.concatenate(features_list, axis=2)
 
-    # 2. Création de la Vérité Terrain (Y)
+    # Création de la Vérité Terrain (Y)
     # La première image sert de référence géométrique
     mask_classes = rasterize_samples(list_files[0], shp_path, field_name=field_name)
 
-    # 3. Extraction des Pixels d'Entraînement
+    # Extraction des Pixels d'Entraînement
     # Garde que les pixels où le masque > 0 (classe existe)
     valid_pixels = (mask_classes > 0)
     # Extraction de X (Tableau des variables)
@@ -346,7 +374,7 @@ def prepare_training_dataset(list_files, shp_path, field_name='strate'):
     # Extraction de Y (Tableau des classes)
     Y = mask_classes[valid_pixels]
     
-    # 4. Nettoyage final (NaN -> 0)
+    # Nettoyage final (NaN -> 0)
     # Remplacement des NaNs par 0 pour le Random Forest
     X = np.nan_to_num(X, nan=0.0)
     X_full = np.nan_to_num(X_full, nan=0.0)
@@ -369,7 +397,7 @@ def print_X_Y_matrix_bilan(X, Y, X_full):
     print(f"{'BILAN DES DONNÉES D ENTRÉE':^60}")
     print("="*60)
 
-    # Partie 1 : L'Image
+    # L'Image
     print(f"\n1. RÉALITÉ TERRAIN (X_full) -> Pour la Carte Finale")
     print(f"   • Structure  : CUBE 3D (Lignes, Colonnes, Variables)")
     print(f"   • Dimensions : {X_full.shape}")
@@ -378,7 +406,7 @@ def print_X_Y_matrix_bilan(X, Y, X_full):
 
     print("-" * 60)
 
-    # Partie 2 : Le Dataset
+    # Le Dataset
     print(f"2. JEU D'ENTRAÎNEMENT (X, Y) -> Pour le Modèle")
     print(f"   • Structure  : TABLEAU 2D (Échantillons, Variables)")
     print(f"   • Dimensions X : {X.shape}")
@@ -387,7 +415,7 @@ def print_X_Y_matrix_bilan(X, Y, X_full):
 
     print("-" * 60)
 
-    # Partie 3 : Analyse
+    # Analyse
     print(f"3. ANALYSE DU RATIO")
     print(f"   => Le modèle apprend sur {ratio:.3f}% de la zone totale.")
     
@@ -401,69 +429,6 @@ def print_X_Y_matrix_bilan(X, Y, X_full):
         print(f"   => ALERTE : X a {nb_vars_train} variables mais l'image en a {nb_vars_image} !")
     
     print("="*60 + "\n")
-
-def plot_hyperparam_impact(cv_results):
-    """
-    Affiche l'impact des hyperparamètres (RF) sur le score moyen.
-    Affichage uniquement (pas de sauvegarde).
-    """
-    df_results = pd.DataFrame(cv_results)
-    
-    # Configuration des paramètres à surveiller
-    params_config = [
-        ('param_n_estimators', "Nombre d'arbres"),
-        ('param_max_depth', "Profondeur Max"),
-        ('param_max_features', "Max Features"),
-        ('param_min_samples_leaf', "Min Samples Leaf")
-    ]
-    
-    # On ne garde que les paramètres présents dans les résultats
-    active_params = [(p, t) for p, t in params_config if p in df_results.columns]
-    
-    if not active_params:
-        print("Aucun paramètre standard trouvé dans les résultats.")
-        return
-
-    # Création dynamique de la figure
-    nb_plots = len(active_params)
-    fig, axes = plt.subplots(1, nb_plots, figsize=(5 * nb_plots, 5), sharey=True)
-    
-    # Gestion du cas où il n'y a qu'un seul graphique
-    if nb_plots == 1: axes = [axes]
-
-    for i, (param, title) in enumerate(active_params):
-        ax = axes[i]
-        
-        # Gestion des valeurs (ex: None pour max_depth)
-        temp_col = df_results[param].fillna('None')
-        
-        # Regroupement et Moyenne
-        grouped = df_results.groupby(temp_col)['mean_test_score'].mean()
-        
-        # Tri de l'axe X si possible
-        try: grouped = grouped.sort_index()
-        except: pass
-
-        # Préparation des axes
-        x_vals = [str(x) for x in grouped.index]
-        y_vals = grouped.values
-        
-        # --- TON STYLE ---
-        ax.plot(x_vals, y_vals, marker='o', linewidth=2, linestyle='-', color='royalblue')
-        
-        ax.set_title(title, fontsize=12, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.5)
-        
-        # Annotations (Valeurs au-dessus des points)
-        for x, y in zip(x_vals, y_vals):
-            ax.annotate(f'{y:.3f}', (x, y), textcoords="offset points", 
-                        xytext=(0,10), ha='center', fontsize=8)
-
-    # Titre global et Label Y sur le premier graph uniquement
-    axes[0].set_ylabel("Précision Moyenne (Accuracy)")
-    plt.suptitle("Impact moyen de chaque hyperparamètre sur la performance", fontsize=16, y=1.05)
-    plt.tight_layout()
-    plt.show()
 
 def compute_feature_importance(model, file_list, dates_list=None):
     """
@@ -480,9 +445,10 @@ def compute_feature_importance(model, file_list, dates_list=None):
     """
     expanded_feature_names = []
 
-    # 1. Génération des noms
+    # Génération des noms
     for f in file_list:
-        filename = os.path.basename(f)
+        filename_full = os.path.basename(f)
+        filename = os.path.splitext(filename_full)[0]
         # Ouvre juste pour compter les bandes
         ds = rw.open_image(f)
         nb_bands = ds.RasterCount
@@ -493,10 +459,9 @@ def compute_feature_importance(model, file_list, dates_list=None):
                 date_suffix = str(dates_list[i]).split(' ')[0] 
                 expanded_feature_names.append(f"{filename}_{date_suffix}")
             else:
-                # Sinon nom générique (ex: "Image_Date1")
                 expanded_feature_names.append(f"{filename}_Date{i+1}")
 
-    # 2. Vérifications de cohérence
+    # Vérifications de cohérence
     nb_names = len(expanded_feature_names)
     nb_imp = len(model.feature_importances_)
     
@@ -506,13 +471,13 @@ def compute_feature_importance(model, file_list, dates_list=None):
     if nb_names != nb_imp:
         print("ATTENTION : Le nombre de noms ne correspond pas au nombre de variables du modèle !")
     
-    # 3. Création du DataFrame
+    # Création du DataFrame
     df_importance = pd.DataFrame({
         'Variable': expanded_feature_names,
         'Importance': model.feature_importances_
     })
     
-    # 4. Tri décroissant
+    # Tri décroissant
     df_sorted = df_importance.sort_values(by='Importance', ascending=False)
     
     return df_sorted
@@ -532,6 +497,84 @@ def plot_top_features(df_importance, top_n=10):
     plt.grid(axis='x', linestyle='--', alpha=0.7)
     plt.tight_layout()
     plt.show()
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_aggregated_importance(df_input):
+    """
+    Agrège et affiche l'importance des variables par Bande et par Date.
+    Gère les noms de variables type 'bretagne_24-25_B08_2025-04-10'.
+    """
+    # Copie et Gestion de l'Index
+    df = df_input.copy()
+    
+    # Si le nom de la variable est dans l'index (cas fréquent), on le sort
+    if 'Feature' not in df.columns:
+        df = df.reset_index()
+    
+    # Identification automatique des colonnes (Nom vs Valeur)
+    col_name = None
+    col_val = None
+    
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            col_val = col
+        else:
+            col_name = col
+            
+    if col_name is None or col_val is None:
+        print(f"Erreur structure : Colonnes trouvées : {df.columns}")
+        return
+
+    # Extraction
+    def extract_band_date(txt):
+        txt = str(txt)
+        parts = txt.split('_')
+        date = parts[-1]
+        # Détection de la bande
+        if "ARI" in txt:
+            band = "ARI"
+        else:
+            band = "Autre"
+            for p in parts:
+                if p.startswith('B') and len(p) <= 3 and any(c.isdigit() for c in p):
+                    band = p
+                    break
+        return pd.Series([band, date])
+
+    df[['Bande', 'Date']] = df[col_name].apply(extract_band_date)
+    
+    # Agrégation
+    band_stats = df.groupby('Bande')[col_val].sum().sort_values(ascending=True)
+    date_stats = df.groupby('Date')[col_val].sum().sort_values(ascending=True)
+    
+    # Affichage Graphique
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Graphique Bandes
+    colors_band = plt.cm.viridis(np.linspace(0, 1, len(band_stats)))
+    axes[0].barh(band_stats.index, band_stats.values, color=colors_band)
+    axes[0].set_title('Importance cumulée par Bande Spectrale')
+    axes[0].set_xlabel('Somme des importances')
+    axes[0].grid(axis='x', linestyle='--', alpha=0.5)
+
+    # Graphique Dates
+    colors_date = plt.cm.viridis(np.linspace(0, 1, len(date_stats)))
+    axes[1].barh(date_stats.index, date_stats.values, color=colors_date)
+    axes[1].set_title('Importance cumulée par Date')
+    axes[1].set_xlabel('Somme des importances')
+    axes[1].grid(axis='x', linestyle='--', alpha=0.5)
+
+    plt.tight_layout()
+    plt.show()
+    
+    # Print console pour analyse
+    print("=== TOP 3 BANDES ===")
+    print(band_stats.sort_values(ascending=False).head(3))
+    print("\n=== TOP 3 DATES ===")
+    print(date_stats.sort_values(ascending=False).head(3))
 
 # ===============================================
 # 5. GÉNÉRATION & VISUALISATION CARTE FINALE
@@ -553,7 +596,7 @@ def generate_final_map(model, X_full, ref_image_path, out_path, nodata=0):
     
     rows, cols, bands = X_full.shape
     
-    # 1. Création du Masque de validité
+    # Création du Masque de validité
     # Utilisation de l'image de référence sur le disque pour retrouver les vrais NaNs/NoData
     ds_ref = rw.open_image(ref_image_path)
     ref_band = ds_ref.GetRasterBand(1).ReadAsArray()
@@ -566,7 +609,7 @@ def generate_final_map(model, X_full, ref_image_path, out_path, nodata=0):
         
     print(f"Dimensions : {rows}x{cols}")
     
-    # 2. Préparation des données
+    # Préparation des données
     # Aplatissement (Reshape) : Transforme le cube en tableau 2D
     X_flat = X_full.reshape(rows * cols, bands)
     mask_flat = valid_mask.reshape(rows * cols)
@@ -579,14 +622,14 @@ def generate_final_map(model, X_full, ref_image_path, out_path, nodata=0):
     
     print(f"Pixels à prédire : {X_to_predict.shape[0]} (sur {rows*cols} totaux)")
     
-    # 3. Prédiction (Uniquement sur les pixels valides)
+    # Prédiction (Uniquement sur les pixels valides)
     if X_to_predict.shape[0] > 0:
         Y_predicted = model.predict(X_to_predict)
     else:
         print("Attention : Aucun pixel valide trouvé !")
         return
 
-    # 4. Reconstruction de l'image complète
+    # Reconstruction de l'image complète
     # Création image vide remplie de 0
     Y_full_flat = np.zeros(rows * cols, dtype=np.uint8)
     
@@ -596,7 +639,7 @@ def generate_final_map(model, X_full, ref_image_path, out_path, nodata=0):
     # Redonne la forme 2D
     carte_strates = Y_full_flat.reshape(rows, cols)
     
-    # 5. Sauvegarde
+    # Sauvegarde
     rw.write_image(
         out_filename=out_path,
         array=carte_strates,
@@ -620,12 +663,12 @@ def show_classification_map(map_path, classes_info, title):
         map_path     : Chemin vers le fichier .tif généré.
         classes_info : Dictionnaire contenant les labels et couleurs.
     """
-    # 1. Chargement de l'image
+    # Chargement de l'image
     ds = gdal.Open(map_path)
     data = ds.GetRasterBand(1).ReadAsArray()
     ds = None
     
-    # 2. Préparation des couleurs
+    # Préparation des couleurs
     # Cherche l'ID max pour dimensionner la liste de couleurs
     max_id = max(classes_info.keys())
     
@@ -646,7 +689,7 @@ def show_classification_map(map_path, classes_info, title):
     # Création de la Colormap personnalisée
     cmap = ListedColormap(colors_list)
     
-    # 3. Affichage
+    # Affichage
     plt.figure(figsize=(15, 10))
     plt.imshow(data, cmap=cmap, interpolation='nearest')
     plt.title(title, fontsize=15, fontweight='bold')
